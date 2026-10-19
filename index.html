@@ -39,3 +39,128 @@ header b{font-size:20px}
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0009;padding:20px;z-index:20}
 .overlay.hide{display:none}
 .card{background:var(--panel);border-radius:20px;padding:24px;max-width:340px;text-align:center;box-shadow:0 8px 30px #0006}
+.card h1{margin:0 0 8px;font-size:24px}
+.card p{margin:0 0 16px;color:var(--muted);line-height:1.4}
+.card button{font:inherit;font-weight:700;font-size:18px;border:0;border-radius:12px;padding:12px 28px;background:var(--accent);color:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>Score <b id="score">0</b></div>
+    <div id="lives" aria-label="Lives"></div>
+    <div>Best <b id="best">0</b></div>
+  </header>
+  <div class="bus" id="bus">
+    <div class="win"><div class="scene" id="scene"></div><div class="road"></div></div>
+    <div class="seats" id="seats"></div>
+  </div>
+  <p class="hint">Tap a crying baby to send a bottle and calm it down. Wrong seat costs a point!</p>
+</div>
+<div class="overlay" id="ov">
+  <div class="card">
+    <h1 id="ovTitle">🚌 Bus Baby Calm-Down</h1>
+    <p id="ovText">Babies keep crying on random seats. Tap each one to fire a bottle before it wails. Miss 3 and the passengers revolt!</p>
+    <button id="go">Start</button>
+  </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const PAX=['🧑','👩','👨','🧓','👵','🧔','👩‍🦰','🧑‍🦱','👴'];
+const rnd=a=>a[Math.random()*a.length|0];
+let seats=[],score=0,lives=3,running=false,timers=new Set(),best=0;
+try{best=+localStorage.getItem('bbBest')||0}catch(e){}
+$('#best').textContent=best;
+const strip='🌳🏠🌲🌳🏢🌳🌲🏠🌳🏬🌲🌳';
+$('#scene').textContent=strip+strip;
+
+function later(fn,ms){const id=setTimeout(()=>{timers.delete(id);fn()},ms);timers.add(id);return id}
+function clearAll(){timers.forEach(clearTimeout);timers.clear()}
+
+const seatsEl=$('#seats');
+for(let r=0;r<5;r++)for(let c=0;c<5;c++){
+  if(c===2){seatsEl.appendChild(document.createElement('div'));continue}
+  const el=document.createElement('button');
+  el.className='seat';el.setAttribute('aria-label','Seat');
+  const s={el,baby:false,t:null,p:rnd(PAX)};
+  el.textContent=s.p;
+  el.addEventListener('pointerdown',e=>{e.preventDefault();tap(s)});
+  seatsEl.appendChild(el);seats.push(s);
+}
+
+function setLives(){$('#lives').textContent='❤️'.repeat(lives)+'🖤'.repeat(3-lives)}
+function setScore(){$('#score').textContent=score}
+function reset(s,face){
+  s.baby=false;s.el.classList.remove('cry');
+  const b=s.el.querySelector('.bar');if(b)b.remove();
+  s.el.firstChild.textContent=face||s.p;
+}
+function pop(s,txt){
+  const e=document.createElement('span');e.className='pop';e.textContent=txt;
+  s.el.appendChild(e);setTimeout(()=>e.remove(),600);
+}
+function fly(s){
+  const b=$('#bus'),br=b.getBoundingClientRect(),r=s.el.getBoundingClientRect();
+  const e=document.createElement('span');e.className='shot';e.textContent='🍼';
+  e.style.left=br.width/2+'px';e.style.top=br.height+'px';b.appendChild(e);
+  const dx=r.left+r.width/2-br.left-br.width/2,dy=r.top+r.height/2-br.top-br.height;
+  requestAnimationFrame(()=>{e.style.transform=`translate(${dx}px,${dy}px) rotate(540deg)`});
+  setTimeout(()=>e.remove(),230);
+}
+function tap(s){
+  if(!running)return;
+  fly(s);
+  if(s.baby){
+    clearTimeout(s.t);timers.delete(s.t);
+    reset(s,'😊');pop(s,'+1');
+    score++;setScore();
+    later(()=>{if(!s.baby)reset(s)},500);
+  }else{
+    if(score>0){score--;setScore()}
+    pop(s,'-1');s.el.classList.add('bad');
+    setTimeout(()=>s.el.classList.remove('bad'),250);
+  }
+}
+function show(s){
+  const stay=Math.max(500,1300-score*30);
+  s.baby=true;s.el.firstChild.textContent='👶';s.el.classList.add('cry');
+  const bar=document.createElement('i');bar.className='bar';bar.style.animationDuration=stay+'ms';
+  s.el.appendChild(bar);
+  try{navigator.vibrate&&navigator.vibrate(20)}catch(e){}
+  s.t=later(()=>miss(s),stay);
+}
+function miss(s){
+  reset(s,'😡');lives--;setLives();
+  later(()=>{if(!s.baby)reset(s)},500);
+  if(lives<=0)end();
+}
+function spawn(){
+  if(!running)return;
+  const max=Math.min(4,1+Math.floor(score/8));
+  const free=seats.filter(s=>!s.baby);
+  if(seats.length-free.length<max)show(rnd(free));
+  const gap=Math.max(280,800-score*15);
+  later(spawn,gap*(.6+Math.random()*.8));
+}
+function start(){
+  clearAll();score=0;lives=3;running=true;
+  seats.forEach(s=>{s.p=rnd(PAX);reset(s)});
+  setScore();setLives();
+  $('#ov').classList.add('hide');
+  later(spawn,600);
+}
+function end(){
+  running=false;clearAll();
+  seats.forEach(s=>reset(s));
+  const nb=score>best;
+  if(nb){best=score;$('#best').textContent=best;try{localStorage.setItem('bbBest',best)}catch(e){}}
+  $('#ovTitle').textContent='😤 Passengers revolted!';
+  $('#ovText').textContent='You calmed '+score+' babies.'+(nb&&score>0?' New best score!':' Best: '+best+'.');
+  $('#go').textContent='Play again';
+  $('#ov').classList.remove('hide');
+}
+$('#go').addEventListener('click',start);
+setLives();
+</script>
+</body>
+</html>
